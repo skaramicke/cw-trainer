@@ -48,6 +48,19 @@ if(active&&!previousUnlocked.has(c)){b.classList.remove("new");void b.offsetWidt
 if(!active)b.classList.remove("new")}
 previousUnlocked=unlocked;
 }
+function celebrateKey(button){
+if(!button||matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+const rect=button.getBoundingClientRect(),burst=document.createElement("div");
+burst.className="keyburst";burst.setAttribute("aria-hidden","true");
+burst.style.left=rect.left+rect.width/2+"px";burst.style.top=rect.top+rect.height/2+"px";
+const colors=["#70e8ce","#b5fff0","#ffce82","#f2fffa"];
+for(let i=0;i<14;i++){
+const p=document.createElement("i"),angle=(i+Math.random()*.65)*Math.PI*2/14,distance=28+Math.random()*34;
+p.style.setProperty("--dx",Math.cos(angle)*distance+"px");p.style.setProperty("--dy",Math.sin(angle)*distance-10+"px");p.style.setProperty("--particle",colors[i%colors.length]);
+const size=3+Math.random()*4;p.style.width=p.style.height=size+"px";burst.append(p)}
+document.body.append(burst);setTimeout(()=>burst.remove(),520);
+button.classList.remove("success-pop");void button.offsetWidth;button.classList.add("success-pop");setTimeout(()=>button.classList.remove("success-pop"),270);
+}
 let pulses=[],frame=0;
 function animateSignal(){
 cancelAnimationFrame(frame);
@@ -86,7 +99,7 @@ function record(a,ok){const stat=s.skills[kind];stat.n++;stat.ok+=Number(ok);con
 function promote(){if(s.level<levels.length-1&&s.recent.length===20&&sum(s.recent)>=18&&pool().every(c=>(s.per[c]||[]).length===5&&sum(s.per[c])>=4)){s.level++;s.recent=[];s.per={};save();return true}return false}
 function input(c){if(!target||!["playing","answer"].includes(phase))return;if(kind==="single"){if(phase==="answer"&&codes[c]){typed=c;check()}}else if(typed.length<100){typed+=c;$("copy").textContent=typed;$("check").disabled=phase!=="answer";drawKeyboard()}}
 function erase(){if(!["playing","answer"].includes(phase))return;typed=typed.slice(0,-1);$("copy").textContent=typed||"—";$("check").disabled=phase!=="answer"||!typed;drawKeyboard()}
-async function check(){if(phase!=="answer"||!target||!typed.trim())return;const a=typed.trim().replace(/\s+/g," "),t=target,ok=a===t;if(!retry)record(a,ok);if(ok){const up=promote();target="";phase="feedback";const e=epoch;$("status").textContent=up?"Level up!":"Correct copy";$("feedback").textContent=up?"Unlocked "+lesson().n+" characters at "+lesson().w+" WPM":"✓ "+t;draw();await feedbackSound(true,e);if(e!==epoch)return;phase="idle";draw();schedule(up?1250:500);return}retry=true;phase="feedback";draw();const e=epoch;$("status").textContent="Compare the sounds";try{await feedbackSound(false,e);if(e!==epoch)return;await wait(90);if(e!==epoch)return;for(const [x,y] of align(a,t)){if(e!==epoch)return;if(x===y)continue;for(const [label,c] of [["You copied",x],["Transmitted",y]]){if(!codes[c])continue;$("feedback").textContent=label+": "+c;await play(c,e);await wait(400);if(e!==epoch)return}}$("feedback").textContent="Transmitted: "+t;await play(t,e);await wait(750);if(e!==epoch)return;typed="";$("feedback").textContent="Try again";await send()}catch{if(e===epoch){phase="answer";$("status").textContent="Audio error — tap Replay";draw()}}}
+async function check(){if(phase!=="answer"||!target||!typed.trim())return;const a=typed.trim().replace(/\s+/g," "),t=target,ok=a===t;if(!retry)record(a,ok);if(ok){celebrateKey(kind==="single"?keyButtons.get(a):keyButtons.get("Enter"));const up=promote();target="";phase="feedback";const e=epoch;$("status").textContent=up?"Level up!":"Correct copy";$("feedback").textContent=up?"Unlocked "+lesson().n+" characters at "+lesson().w+" WPM":"✓ "+t;draw();await feedbackSound(true,e);if(e!==epoch)return;phase="idle";draw();schedule(up?1250:500);return}retry=true;phase="feedback";draw();const e=epoch;$("status").textContent="Compare the sounds";try{await feedbackSound(false,e);if(e!==epoch)return;await wait(90);if(e!==epoch)return;for(const [x,y] of align(a,t)){if(e!==epoch)return;if(x===y)continue;for(const [label,c] of [["You copied",x],["Transmitted",y]]){if(!codes[c])continue;$("feedback").textContent=label+": "+c;await play(c,e);await wait(400);if(e!==epoch)return}}$("feedback").textContent="Transmitted: "+t;await play(t,e);await wait(750);if(e!==epoch)return;typed="";$("feedback").textContent="Try again";await send()}catch{if(e===epoch){phase="answer";$("status").textContent="Audio error — tap Replay";draw()}}}
 $("start").onclick=next;$("replay").onclick=()=>{if(phase==="answer")send()};$("check").onclick=check;
 $("skip").onclick=async()=>{if(phase!=="answer"||!target)return;const t=target;if(!retry)record("",false);target="";typed=t;phase="feedback";draw();const e=epoch;$("feedback").textContent="Transmitted: "+t;try{await play(t,e)}catch{}if(e!==epoch)return;phase="idle";draw();schedule(700)};
 $("auto").onchange=()=>{clearTimeout(timer);if(phase==="idle"&&s.total)schedule(200)};
