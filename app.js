@@ -56,6 +56,26 @@ tick();
 }
 async function unlock(){if(!ctx)ctx=new(window.AudioContext||window.webkitAudioContext)();if(ctx.state!=="running")await ctx.resume()}
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
+// Short non-CW earcons. They never drive the visual receiver.
+async function feedbackSound(ok,e){
+if(!$("effects")?.checked)return;
+const volume=+$("volume").value/100;
+if(!volume)return;
+try{
+await unlock();if(e!==epoch)return;
+const start=ctx.currentTime+.008,duration=ok?.115:.16;
+const o=ctx.createOscillator(),g=ctx.createGain();
+o.type="sine";o.connect(g);g.connect(ctx.destination);
+o.frequency.setValueAtTime(ok?880:350,start);
+o.frequency.exponentialRampToValueAtTime(ok?1320:190,start+duration*.78);
+g.gain.setValueAtTime(0,start);g.gain.linearRampToValueAtTime(volume*.13,start+.009);
+g.gain.exponentialRampToValueAtTime(.0001,start+duration);
+o.start(start);o.stop(start+duration+.005);nodes.push(o);
+o.onended=()=>{nodes=nodes.filter(x=>x!==o);o.disconnect();g.disconnect()};
+await wait((duration+.025)*1000);
+}catch{/* Feedback must never block training. */}
+}
+
 async function play(text,e){await unlock();if(e!==epoch)return;const u=1.2/lesson().w,v=+$("volume").value/100*.22,f=+$("pitch").value;let t=ctx.currentTime+.05,end=t;pulses=[];const seq=[...text];for(let i=0;i<seq.length;i++){const c=seq[i];if(c===" "){t+=Math.max(7,gap()*7/3)*u-gap()*u;continue}const code=codes[c];if(!code)continue;for(const sign of code){const d=u*(sign==="-"?3:1),o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;o.connect(g);g.connect(ctx.destination);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.004);g.gain.setValueAtTime(v,t+d-.004);g.gain.linearRampToValueAtTime(0,t+d);pulses.push([t,t+d]);o.start(t);o.stop(t+d+.005);nodes.push(o);o.onended=()=>{nodes=nodes.filter(x=>x!==o);o.disconnect();g.disconnect()};end=t+d;t=end+u}t+=(gap()-1)*u}document.body.classList.add("playing");animateSignal();await wait(Math.max(0,(end-ctx.currentTime+.03)*1000));if(e===epoch){document.body.classList.remove("playing","keyed");cancelAnimationFrame(frame)}}
 function cancel(){cancelAnimationFrame(frame);pulses=[];document.body.classList.remove("keyed");epoch++;clearTimeout(timer);for(const o of nodes){try{o.stop()}catch{}}nodes=[];document.body.classList.remove("playing")}
 async function send(){const e=epoch;phase="playing";$("status").textContent="Receiving…";draw();try{await play(target,e);if(e!==epoch)return;phase="answer";$("status").textContent="Awaiting input"}catch{if(e!==epoch)return;phase="answer";$("status").textContent="Audio error — tap Replay"}draw()}
@@ -66,7 +86,7 @@ function record(a,ok){const stat=s.skills[kind];stat.n++;stat.ok+=Number(ok);con
 function promote(){if(s.level<levels.length-1&&s.recent.length===20&&sum(s.recent)>=18&&pool().every(c=>(s.per[c]||[]).length===5&&sum(s.per[c])>=4)){s.level++;s.recent=[];s.per={};save();return true}return false}
 function input(c){if(!target||!["playing","answer"].includes(phase))return;if(kind==="single"){if(phase==="answer"&&codes[c]){typed=c;check()}}else if(typed.length<100){typed+=c;$("copy").textContent=typed;$("check").disabled=phase!=="answer";drawKeyboard()}}
 function erase(){if(!["playing","answer"].includes(phase))return;typed=typed.slice(0,-1);$("copy").textContent=typed||"—";$("check").disabled=phase!=="answer"||!typed;drawKeyboard()}
-async function check(){if(phase!=="answer"||!target||!typed.trim())return;const a=typed.trim().replace(/\s+/g," "),t=target,ok=a===t;if(!retry)record(a,ok);if(ok){const up=promote();target="";phase="idle";$("status").textContent=up?"Level up!":"Correct copy";$("feedback").textContent=up?"Unlocked "+lesson().n+" characters at "+lesson().w+" WPM":"✓ "+t;draw();schedule(up?1400:650);return}retry=true;phase="feedback";draw();const e=epoch;$("status").textContent="Compare the sounds";try{for(const [x,y] of align(a,t)){if(e!==epoch)return;if(x===y)continue;for(const [label,c] of [["You copied",x],["Transmitted",y]]){if(!codes[c])continue;$("feedback").textContent=label+": "+c;await play(c,e);await wait(400);if(e!==epoch)return}}$("feedback").textContent="Transmitted: "+t;await play(t,e);await wait(750);if(e!==epoch)return;typed="";$("feedback").textContent="Try again";await send()}catch{if(e===epoch){phase="answer";$("status").textContent="Audio error — tap Replay";draw()}}}
+async function check(){if(phase!=="answer"||!target||!typed.trim())return;const a=typed.trim().replace(/\s+/g," "),t=target,ok=a===t;if(!retry)record(a,ok);if(ok){const up=promote();target="";phase="feedback";const e=epoch;$("status").textContent=up?"Level up!":"Correct copy";$("feedback").textContent=up?"Unlocked "+lesson().n+" characters at "+lesson().w+" WPM":"✓ "+t;draw();await feedbackSound(true,e);if(e!==epoch)return;phase="idle";draw();schedule(up?1250:500);return}retry=true;phase="feedback";draw();const e=epoch;$("status").textContent="Compare the sounds";try{await feedbackSound(false,e);if(e!==epoch)return;await wait(90);if(e!==epoch)return;for(const [x,y] of align(a,t)){if(e!==epoch)return;if(x===y)continue;for(const [label,c] of [["You copied",x],["Transmitted",y]]){if(!codes[c])continue;$("feedback").textContent=label+": "+c;await play(c,e);await wait(400);if(e!==epoch)return}}$("feedback").textContent="Transmitted: "+t;await play(t,e);await wait(750);if(e!==epoch)return;typed="";$("feedback").textContent="Try again";await send()}catch{if(e===epoch){phase="answer";$("status").textContent="Audio error — tap Replay";draw()}}}
 $("start").onclick=next;$("replay").onclick=()=>{if(phase==="answer")send()};$("check").onclick=check;
 $("skip").onclick=async()=>{if(phase!=="answer"||!target)return;const t=target;if(!retry)record("",false);target="";typed=t;phase="feedback";draw();const e=epoch;$("feedback").textContent="Transmitted: "+t;try{await play(t,e)}catch{}if(e!==epoch)return;phase="idle";draw();schedule(700)};
 $("auto").onchange=()=>{clearTimeout(timer);if(phase==="idle"&&s.total)schedule(200)};
@@ -75,9 +95,9 @@ $("reset").onclick=()=>{if(!confirm("Reset progress on this device?"))return;can
 $("export").onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(s)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="cw-progress.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 $("import").onclick=()=>$("file").click();$("file").onchange=async()=>{try{const v=JSON.parse(await $("file").files[0].text());if(!valid(v))throw Error();if(confirm("Replace current progress?")){cancel();s=v;save();target="";typed="";phase="idle";draw()}}catch{alert("Invalid progress file")}$("file").value=""};
 document.addEventListener("keydown",e=>{if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||["INPUT","SELECT","TEXTAREA"].includes(e.target.tagName))return;if(e.key==="Escape"){e.preventDefault();$("replay").click()}else if(e.key==="Enter"){e.preventDefault();if(target)check();else next()}else if(e.key==="Backspace"){e.preventDefault();erase()}else if(e.key===" "){e.preventDefault();if(!target)next();else input(" ")}else if(pool().includes(e.key.toUpperCase())){e.preventDefault();input(e.key.toUpperCase())}});
-try{const prefs=JSON.parse(localStorage.getItem("cw-settings")||"{}");for(const id of ["pitch","volume","mode"]){if(prefs[id]!=null)$(id).value=prefs[id]}if(typeof prefs.auto==="boolean")$("auto").checked=prefs.auto}catch{}
-const saveSettings=()=>{try{localStorage.setItem("cw-settings",JSON.stringify({pitch:$("pitch").value,volume:$("volume").value,mode:$("mode").value,auto:$("auto").checked}))}catch{}};
-for(const id of ["pitch","volume","mode","auto"])$(id).addEventListener("change",saveSettings);
+try{const prefs=JSON.parse(localStorage.getItem("cw-settings")||"{}");for(const id of ["pitch","volume","mode"]){if(prefs[id]!=null)$(id).value=prefs[id]}if(typeof prefs.auto==="boolean")$("auto").checked=prefs.auto;if(typeof prefs.effects==="boolean"&&$("effects"))$("effects").checked=prefs.effects}catch{}
+const saveSettings=()=>{try{localStorage.setItem("cw-settings",JSON.stringify({pitch:$("pitch").value,volume:$("volume").value,mode:$("mode").value,auto:$("auto").checked,effects:$("effects")?.checked??true}))}catch{}};
+for(const id of ["pitch","volume","mode","auto","effects"])$(id)?.addEventListener("change",saveSettings);
 
 // HUD panels overlay the training surface without interrupting audio or keyboard input.
 const hudPanels=[["statsToggle","statsPanel"],["settingsToggle","settings"]];
