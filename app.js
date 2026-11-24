@@ -78,4 +78,15 @@ document.addEventListener("keydown",e=>{if(e.repeat||e.ctrlKey||e.metaKey||e.alt
 try{const prefs=JSON.parse(localStorage.getItem("cw-settings")||"{}");for(const id of ["pitch","volume","mode"]){if(prefs[id]!=null)$(id).value=prefs[id]}if(typeof prefs.auto==="boolean")$("auto").checked=prefs.auto}catch{}
 const saveSettings=()=>{try{localStorage.setItem("cw-settings",JSON.stringify({pitch:$("pitch").value,volume:$("volume").value,mode:$("mode").value,auto:$("auto").checked}))}catch{}};
 for(const id of ["pitch","volume","mode","auto"])$(id).addEventListener("change",saveSettings);
+
+// HUD panels overlay the training surface without interrupting audio or keyboard input.
+const hudPanels=[["statsToggle","statsPanel"],["settingsToggle","settings"]];
+function closeHud(){for(const [button,panel] of hudPanels){$(panel).hidden=true;$(button).setAttribute("aria-expanded","false")}}
+for(const [button,panel] of hudPanels){
+const toggle=$(button);toggle.addEventListener("pointerdown",e=>e.preventDefault());
+toggle.addEventListener("click",()=>{const open=$(panel).hidden;closeHud();$(panel).hidden=!open;toggle.setAttribute("aria-expanded",String(open));toggle.blur()});
+}
+document.addEventListener("pointerdown",e=>{if(!e.target.closest(".hud,.hudpanel"))closeHud()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&hudPanels.some(([,panel])=>!$(panel).hidden)){closeHud();e.stopImmediatePropagation();e.preventDefault()}},true);
+
 draw();if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(console.warn);
