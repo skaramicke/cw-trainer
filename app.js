@@ -22,23 +22,50 @@ function choose(){let k=$("mode").value,manual=k!=="adaptive";if(!manual){const 
 function draw(){ $("level").textContent=s.level+1;$("speed").textContent=lesson().w;$("accuracy").textContent=s.total?Math.round(100*s.correct/s.total)+"%":"—";$("group").textContent=size();
 const coverage=pool().reduce((a,c)=>a+Math.min(1,sum(s.per[c]||[])/4)*Math.min(1,(s.per[c]||[]).length/5),0)/pool().length;
 $("progress").value=Math.min(1,s.recent.length/20,sum(s.recent)/18,coverage);$("goal").textContent="Level mastery · "+s.recent.length+"/20 trials · "+gap()+" unit spacing";
-$("copy").textContent=typed||"—";$("keys").replaceChildren();for(const c of pool().sort()){const b=document.createElement("button");b.textContent=c;b.disabled=!target||!["playing","answer"].includes(phase)||(phase==="playing"&&kind==="single");b.onclick=()=>input(c);$("keys").append(b)}
-if(kind!=="single"){for(const [label,fn] of [["Space",()=>input(" ")],["⌫",erase]]){const b=document.createElement("button");b.textContent=label;b.style.fontSize="14px";b.disabled=!target||!["playing","answer"].includes(phase);b.onclick=fn;$("keys").append(b)}}
+$("copy").textContent=typed||"—";drawKeyboard();
 $("start").disabled=["playing","feedback"].includes(phase);$("start").textContent=phase==="idle"?"Start":"Next";$("replay").disabled=!target||phase!=="answer";$("check").disabled=!target||phase!=="answer"||!typed;$("skip").disabled=!target||phase!=="answer";
 $("master").replaceChildren();for(const c of pool()){const el=document.createElement("span"),p=document.createElement("progress");el.textContent=c;p.max=5;p.value=sum(s.per[c]||[]);el.append(p);$("master").append(el)}
 $("skills").replaceChildren();types.forEach((t,i)=>{const a=s.skills[t],el=document.createElement("div");el.textContent=labels[i]+" · "+(a.n?Math.round(100*a.ok/a.n)+"% ("+a.n+")":"—");el.style.marginBottom="8px";$("skills").append(el)})}
+const keyButtons=new Map();
+let previousUnlocked=new Set(pool());
+function drawKeyboard(){
+if(!keyButtons.size){
+for(const row of ["1234567890","QWERTYUIOP","ASDFGHJKL","ZXCVBNM"]){
+const el=document.createElement("div");el.className="keyrow";
+for(const c of row){const b=document.createElement("button");b.textContent=c;b.type="button";b.onclick=()=>input(c);el.append(b);keyButtons.set(c,b)}
+$("keys").append(el)}
+const row=document.createElement("div");row.className="keyrow";
+for(const [c,label,fn] of [[" ","Space",()=>input(" ")],["Backspace","⌫",erase],["Enter","↵ Check",check]]){
+const b=document.createElement("button");b.textContent=label;b.className="utility"+(c===" "?" space":"");b.onclick=fn;row.append(b);keyButtons.set(c,b)}
+$("keys").append(row)}
+const unlocked=new Set(pool()),canType=!!target&&["playing","answer"].includes(phase);
+for(const [c,b] of keyButtons){
+if(c===" "||c==="Backspace"||c==="Enter"){b.disabled=kind==="single"||!canType||(c==="Enter"&&(phase!=="answer"||!typed.trim()));continue}
+const active=unlocked.has(c);b.classList.toggle("unlocked",active);b.classList.toggle("locked",!active);
+b.disabled=!active||!canType||(phase==="playing"&&kind==="single");
+b.setAttribute("aria-label",c+(active?"":" (locked)"));
+if(active&&!previousUnlocked.has(c)){b.classList.remove("new");void b.offsetWidth;b.classList.add("new")}
+if(!active)b.classList.remove("new")}
+previousUnlocked=unlocked;
+}
+let pulses=[],frame=0;
+function animateSignal(){
+cancelAnimationFrame(frame);
+const tick=()=>{const now=ctx?.currentTime??0;document.body.classList.toggle("keyed",pulses.some(([a,b])=>now>=a&&now<b));if(pulses.some(([,b])=>now<b))frame=requestAnimationFrame(tick);else document.body.classList.remove("keyed")};
+tick();
+}
 async function unlock(){if(!ctx)ctx=new(window.AudioContext||window.webkitAudioContext)();if(ctx.state!=="running")await ctx.resume()}
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-async function play(text,e){await unlock();if(e!==epoch)return;const u=1.2/lesson().w,v=+$("volume").value/100*.22,f=+$("pitch").value;let t=ctx.currentTime+.05,end=t;const seq=[...text];for(let i=0;i<seq.length;i++){const c=seq[i];if(c===" "){t+=Math.max(7,gap()*7/3)*u-gap()*u;continue}const code=codes[c];if(!code)continue;for(const sign of code){const d=u*(sign==="-"?3:1),o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;o.connect(g);g.connect(ctx.destination);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.004);g.gain.setValueAtTime(v,t+d-.004);g.gain.linearRampToValueAtTime(0,t+d);o.start(t);o.stop(t+d+.005);nodes.push(o);o.onended=()=>{nodes=nodes.filter(x=>x!==o);o.disconnect();g.disconnect()};end=t+d;t=end+u}t+=(gap()-1)*u}document.body.classList.add("playing");await wait(Math.max(0,(end-ctx.currentTime+.03)*1000));if(e===epoch)document.body.classList.remove("playing")}
-function cancel(){epoch++;clearTimeout(timer);for(const o of nodes){try{o.stop()}catch{}}nodes=[];document.body.classList.remove("playing")}
+async function play(text,e){await unlock();if(e!==epoch)return;const u=1.2/lesson().w,v=+$("volume").value/100*.22,f=+$("pitch").value;let t=ctx.currentTime+.05,end=t;pulses=[];const seq=[...text];for(let i=0;i<seq.length;i++){const c=seq[i];if(c===" "){t+=Math.max(7,gap()*7/3)*u-gap()*u;continue}const code=codes[c];if(!code)continue;for(const sign of code){const d=u*(sign==="-"?3:1),o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;o.connect(g);g.connect(ctx.destination);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.004);g.gain.setValueAtTime(v,t+d-.004);g.gain.linearRampToValueAtTime(0,t+d);pulses.push([t,t+d]);o.start(t);o.stop(t+d+.005);nodes.push(o);o.onended=()=>{nodes=nodes.filter(x=>x!==o);o.disconnect();g.disconnect()};end=t+d;t=end+u}t+=(gap()-1)*u}document.body.classList.add("playing");animateSignal();await wait(Math.max(0,(end-ctx.currentTime+.03)*1000));if(e===epoch){document.body.classList.remove("playing","keyed");cancelAnimationFrame(frame)}}
+function cancel(){cancelAnimationFrame(frame);pulses=[];document.body.classList.remove("keyed");epoch++;clearTimeout(timer);for(const o of nodes){try{o.stop()}catch{}}nodes=[];document.body.classList.remove("playing")}
 async function send(){const e=epoch;phase="playing";$("status").textContent="Receiving…";draw();try{await play(target,e);if(e!==epoch)return;phase="answer";$("status").textContent="Awaiting input"}catch{if(e!==epoch)return;phase="answer";$("status").textContent="Audio error — tap Replay"}draw()}
 function next(){if(["playing","feedback"].includes(phase))return;cancel();[kind,target]=choose();typed="";retry=false;$("feedback").textContent="Copy what you hear.";send()}
 function schedule(ms){clearTimeout(timer);if($("auto").checked)timer=setTimeout(next,ms)}
 function align(a,b){const d=Array.from({length:a.length+1},(_,i)=>Array.from({length:b.length+1},(_,j)=>i===0?j:j===0?i:0));for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+Number(a[i-1]!==b[j-1]));let i=a.length,j=b.length,out=[];while(i||j){if(i&&j&&d[i][j]===d[i-1][j-1]+Number(a[i-1]!==b[j-1]))out.push([a[--i],b[--j]]);else if(i&&d[i][j]===d[i-1][j]+1)out.push([a[--i],""]);else out.push(["",b[--j]])}return out.reverse()}
 function record(a,ok){const stat=s.skills[kind];stat.n++;stat.ok+=Number(ok);const pairs=align(a,target).filter(([x,y])=>x!==" "&&y!==" ");s.total+=pairs.length;s.correct+=pairs.filter(([x,y])=>x===y).length;if($("mode").value==="adaptive"){if(kind==="single"){s.recent=[...s.recent,Number(ok)].slice(-20);s.per[target]=[...(s.per[target]||[]),Number(ok)].slice(-5)}else{s.groupRecent=[...s.groupRecent,Number(ok)].slice(-12);if(s.groupRecent.length===12&&sum(s.groupRecent)>=11&&s.group<20){s.group++;s.groupRecent=[]}}}save()}
 function promote(){if(s.level<levels.length-1&&s.recent.length===20&&sum(s.recent)>=18&&pool().every(c=>(s.per[c]||[]).length===5&&sum(s.per[c])>=4)){s.level++;s.recent=[];s.per={};save();return true}return false}
-function input(c){if(!target||!["playing","answer"].includes(phase))return;if(kind==="single"){if(phase==="answer"&&codes[c]){typed=c;check()}}else if(typed.length<100){typed+=c;$("copy").textContent=typed;$("check").disabled=phase!=="answer"}}
-function erase(){if(!["playing","answer"].includes(phase))return;typed=typed.slice(0,-1);$("copy").textContent=typed||"—";$("check").disabled=phase!=="answer"||!typed}
+function input(c){if(!target||!["playing","answer"].includes(phase))return;if(kind==="single"){if(phase==="answer"&&codes[c]){typed=c;check()}}else if(typed.length<100){typed+=c;$("copy").textContent=typed;$("check").disabled=phase!=="answer";drawKeyboard()}}
+function erase(){if(!["playing","answer"].includes(phase))return;typed=typed.slice(0,-1);$("copy").textContent=typed||"—";$("check").disabled=phase!=="answer"||!typed;drawKeyboard()}
 async function check(){if(phase!=="answer"||!target||!typed.trim())return;const a=typed.trim().replace(/\s+/g," "),t=target,ok=a===t;if(!retry)record(a,ok);if(ok){const up=promote();target="";phase="idle";$("status").textContent=up?"Level up!":"Correct copy";$("feedback").textContent=up?"Unlocked "+lesson().n+" characters at "+lesson().w+" WPM":"✓ "+t;draw();schedule(up?1400:650);return}retry=true;phase="feedback";draw();const e=epoch;$("status").textContent="Compare the sounds";try{for(const [x,y] of align(a,t)){if(e!==epoch)return;if(x===y)continue;for(const [label,c] of [["You copied",x],["Transmitted",y]]){if(!codes[c])continue;$("feedback").textContent=label+": "+c;await play(c,e);await wait(400);if(e!==epoch)return}}$("feedback").textContent="Transmitted: "+t;await play(t,e);await wait(750);if(e!==epoch)return;typed="";$("feedback").textContent="Try again";await send()}catch{if(e===epoch){phase="answer";$("status").textContent="Audio error — tap Replay";draw()}}}
 $("start").onclick=next;$("replay").onclick=()=>{if(phase==="answer")send()};$("check").onclick=check;
 $("skip").onclick=async()=>{if(phase!=="answer"||!target)return;const t=target;if(!retry)record("",false);target="";typed=t;phase="feedback";draw();const e=epoch;$("feedback").textContent="Transmitted: "+t;try{await play(t,e)}catch{}if(e!==epoch)return;phase="idle";draw();schedule(700)};
@@ -48,4 +75,7 @@ $("reset").onclick=()=>{if(!confirm("Reset progress on this device?"))return;can
 $("export").onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(s)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="cw-progress.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 $("import").onclick=()=>$("file").click();$("file").onchange=async()=>{try{const v=JSON.parse(await $("file").files[0].text());if(!valid(v))throw Error();if(confirm("Replace current progress?")){cancel();s=v;save();target="";typed="";phase="idle";draw()}}catch{alert("Invalid progress file")}$("file").value=""};
 document.addEventListener("keydown",e=>{if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||["INPUT","SELECT","TEXTAREA"].includes(e.target.tagName))return;if(e.key==="Escape"){e.preventDefault();$("replay").click()}else if(e.key==="Enter"){e.preventDefault();if(target)check();else next()}else if(e.key==="Backspace"){e.preventDefault();erase()}else if(e.key===" "){e.preventDefault();if(!target)next();else input(" ")}else if(pool().includes(e.key.toUpperCase())){e.preventDefault();input(e.key.toUpperCase())}});
+try{const prefs=JSON.parse(localStorage.getItem("cw-settings")||"{}");for(const id of ["pitch","volume","mode"]){if(prefs[id]!=null)$(id).value=prefs[id]}if(typeof prefs.auto==="boolean")$("auto").checked=prefs.auto}catch{}
+const saveSettings=()=>{try{localStorage.setItem("cw-settings",JSON.stringify({pitch:$("pitch").value,volume:$("volume").value,mode:$("mode").value,auto:$("auto").checked}))}catch{}};
+for(const id of ["pitch","volume","mode","auto"])$(id).addEventListener("change",saveSettings);
 draw();if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(console.warn);
